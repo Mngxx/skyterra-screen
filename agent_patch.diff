@@ -1,0 +1,23 @@
+diff --git a/app.py b/app.py
+index 2208b41..c9485a2 100644
+--- a/app.py
++++ b/app.py
+@@ -99,9 +99,15 @@ def create_task():
+         return jsonify({"error": "title is required"}), 400
+ 
+     with SessionLocal() as session:
+-        area_id = payload.get("area_id") or _last_used_area_id(session)
+-        area = session.get(Area, area_id)
+-        if area is None or area.archived:
++        # The client sends the selected area as `areaId`, so the previous
++        # lookup never found it and every task silently fell through to the
++        # most recently used area. Accept both spellings, and normalise the
++        # value so a string id from the query layer still resolves.
++        area_id = payload.get("area_id", payload.get("areaId"))
++        if area_id is None:
++            area_id = _last_used_area_id(session)
++        area = session.get(Area, int(area_id))
++        if area is None:
+             return jsonify({"error": "unknown area"}), 400
+ 
+         task = Task(

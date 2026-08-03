@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screening scaffold — task board</title>
+<style>
+  body{margin:0;background:#f7f8fa;color:#0f1722;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px}
+  .wrap{max-width:760px;margin:0 auto;padding:32px 20px 60px}
+  h1{font-size:22px;color:#12233f;margin:0 0 4px}
+  p.sub{color:#4a5666;font-size:13.5px;margin:0 0 24px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+  select,input{font:inherit;padding:7px 10px;border:1px solid #e3e7ec;border-radius:7px;background:#fff}
+  button{font:inherit;padding:7px 14px;border:0;border-radius:7px;background:#2a78d6;color:#fff;cursor:pointer}
+  #task-count{color:#8b95a1;font-size:12.5px;margin-left:auto}
+  .task{display:flex;gap:12px;align-items:center;background:#fff;border:1px solid #e3e7ec;
+    border-radius:8px;padding:10px 14px;margin-bottom:8px}
+  .task-title{flex:1}
+  .task-status{font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Task board</h1>
+  <p class="sub">Screening scaffold. See README.md.</p>
+
+  <div class="bar">
+    <select id="area-select"></select>
+    <input id="tag-filter" placeholder="filter by tag">
+    <span id="task-count"></span>
+  </div>
+
+  <div class="bar">
+    <input id="new-title" placeholder="new task title" style="flex:1">
+    <button id="add-task">Add</button>
+  </div>
+
+  <div id="task-list"></div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
