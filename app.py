@@ -98,8 +98,10 @@ def create_task():
         return jsonify({"error": "title is required"}), 400
 
     with SessionLocal() as session:
-        area_id = payload.get("area_id") or _last_used_area_id(session)
-        area = session.get(Area, area_id)
+        area_id = payload.get("area_id", payload.get("areaId"))
+        if area_id is None:
+            area_id = _last_used_area_id(session)
+        area = session.get(Area, int(area_id))
         if area is None or area.archived:
             return jsonify({"error": "unknown area"}), 400
 
