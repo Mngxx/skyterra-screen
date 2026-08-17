@@ -22,6 +22,22 @@ def test_tasks_are_scoped_to_their_area(client, area_ids):
     assert titles == {"First", "Second"}
 
 
+def test_duplicate_tags_are_not_double_counted(client, area_ids):
+    client.post(
+        "/api/tasks",
+        json={
+            "title": "Tagged twice",
+            "area_id": area_ids["platform"],
+            "meta": {"tags": ["backend", "backend"]},
+        },
+    )
+
+    body = client.get(f"/api/tasks?area={area_ids['platform']}&tag=backend").get_json()
+
+    assert body["count"] == len(body["tasks"])
+    assert body["count"] == 2
+
+
 def test_tag_filter_selects_the_right_tasks(client, area_ids):
     body = client.get(f"/api/tasks?area={area_ids['platform']}&tag=backend").get_json()
     assert [t["title"] for t in body["tasks"]] == ["First"]
