@@ -154,18 +154,40 @@ with the sections below filled in.
 
 | Task | Hours | Notes |
 |---|---|---|
-| A |  |  |
+| A | 1 hr 10 min | Includes a detour debugging a false performance regression that turned out to be a stopped Flask server / curl connection timeout, not real code. |
 | B |  |  |
 | C |  |  |
 | D (optional) |  |  |
 
 ### Task A — EXPLAIN ANALYZE, before and after
 
+**SQL query plan — before (no index on `meta`):**
 ```
-(paste here)
+Seq Scan on tasks  (cost=0.00..8426.00 rows=11445 width=118) (actual time=0.032..76.148 rows=12335 loops=1)
+  Filter: ((meta @> '{"tags": ["backend"]}'::jsonb) AND (area_id = 3))
+  Rows Removed by Filter: 237665
+Planning Time: 0.406 ms
+Execution Time: 76.676 ms
 ```
 
+**SQL query plan — after (`ix_tasks_meta_gin` GIN index added):**
+```
+Bitmap Heap Scan on tasks  (cost=308.89..5666.60 rows=11445 width=118) (actual time=3.966..25.066 rows=12335 loops=1)
+  Recheck Cond: (meta @> '{"tags": ["backend"]}'::jsonb)
+  Filter: (area_id = 3)
+  Rows Removed by Filter: 37419
+  Heap Blocks: exact=4676
+  ->  Bitmap Index Scan on ix_tasks_meta_gin  (cost=0.00..306.03 rows=45447 width=0) (actual time=3.463..3.463 rows=49754 loops=1)
+        Index Cond: (meta @> '{"tags": ["backend"]}'::jsonb)
+Planning Time: 0.531 ms
+Execution Time: 25.574 ms
+```
+
+**Endpoint level, for context:** the ticket reports ~3s against the original code (Python-side filtering, no SQL change). After this fix — SQL-side filtering plus the index — `GET /api/tasks?area=3&tag=backend` returns in ~0.36–0.40s (`200`, verified over multiple runs). The gap between that and the 25.6ms SQL execution time is JSON-serializing the 12,335 matching tasks, not the query itself.
+
 ### Task A — what I chose not to do
+
+I considered normalizing tags into a separate `tags`/`task_tags` join table, which would make duplicate tags structurally impossible and allow ordinary btree indexes instead of GIN — but that's a schema migration touching the write path and 250,000 existing rows, well beyond a ticket scoped to fixing one endpoint. I also considered a separate `COUNT(*)` query alongside a paginated task list, the more typical REST pattern, but this endpoint has no pagination today, so a second query would only duplicate work the current single query already does for free. Both are legitimate improvements I'd revisit if the endpoint's actual requirements grew to need them, not something to build speculatively now.
 
 ### Task B — what the patch actually does
 
@@ -181,3 +203,5 @@ with the sections below filled in.
 
 Genuinely useful to us, and it does not count against you. If part of this was
 unclear, badly specified or broken, say so.
+
+**(Task A, so far — will add to this as I go through B, C, D):** `docker compose exec db psql -f <path>` resolves the path inside the *container's* filesystem, not the host's. Since `migrations/` isn't mounted the way `initdb/` is, running `docker compose exec db psql -f migrations/0001_....sql` fails with "No such file or directory" — which reads like a broken migration but is really just a path-resolution gotcha. Piping the file in via stdin instead (`docker compose exec -T db psql -U screen -d screen < migrations/0001_....sql`) works. Worth a one-line note in the README's setup section for anyone applying a migration by hand.
