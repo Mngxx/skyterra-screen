@@ -93,3 +93,14 @@ def test_meta_round_trips(client, area_ids):
     )
     assert response.status_code == 201
     assert response.get_json()["meta"]["estimate"] == 3
+
+
+def test_a_task_cannot_be_created_in_an_archived_area(client, area_ids):
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "Should not land here",
+            "area_id": area_ids["legacy"],
+        },
+    )
+    assert response.status_code == 400
