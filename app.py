@@ -6,7 +6,8 @@ exercise goes with which. Read it before changing anything.
 
 from flask import Flask, jsonify, render_template, request
 from models import Area, SessionLocal, Task, init_db
-from sqlalchemy import select
+from sqlalchemy import cast, select
+from sqlalchemy.dialects.postgresql import JSONB
 
 app = Flask(__name__)
 
@@ -65,23 +66,11 @@ def list_tasks():
         return jsonify({"error": "area is required"}), 400
 
     with SessionLocal() as session:
-        rows = (
-            session.execute(
-                select(Task).where(Task.area_id == area_id).order_by(Task.id)
-            )
-            .scalars()
-            .all()
-        )
-
+        stmt = select(Task).where(Task.area_id == area_id)
         if tag:
-            matching = [t for t in rows if tag in (t.meta or {}).get("tags", [])]
-            count = sum(
-                len([x for x in (t.meta or {}).get("tags", []) if x == tag])
-                for t in rows
-            )
-        else:
-            matching = rows
-            count = len(rows)
+            stmt = stmt.where(Task.meta.op("@>")(cast({"tags": [tag]}, JSONB)))
+        matching = session.execute(stmt.order_by(Task.id)).scalars().all()
+        count = len(matching)
 
         return jsonify(
             {
