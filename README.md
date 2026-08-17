@@ -155,7 +155,7 @@ with the sections below filled in.
 | Task | Hours | Notes |
 |---|---|---|
 | A | 1 hr 10 min | Includes a detour debugging a false performance regression that turned out to be a stopped Flask server / curl connection timeout, not real code. |
-| B |  |  |
+| B | 56 min | Includes verifying the agent's root-cause claim directly in `static/app.js` rather than trusting the report, and catching a leftover unguarded line during self-review that would have made the new `try/except` silently ineffective. |
 | C |  |  |
 | D (optional) |  |  |
 
@@ -191,9 +191,25 @@ I considered normalizing tags into a separate `tags`/`task_tags` join table, whi
 
 ### Task B — what the patch actually does
 
+The agent's diagnosis was correct: the client posts the selected area as `areaId`, but the server only checked `area_id`, so the lookup always returned `None` and silently fell back to whichever area was most recently used. I verified this directly in `static/app.js` rather than taking the report's word for it — line 90 does send `areaId`. The patch's fix for that — accepting both spellings and coercing to `int` — is genuinely correct.
+
+What the report doesn't mention: in rewriting the area lookup, the patch also dropped the `or area.archived` clause from the validation guard. The original code rejected task creation if the area didn't exist *or* was archived; the patched version only checks for existence. That means `POST /api/tasks` against an archived area (e.g. "Legacy import") now silently succeeds, which it shouldn't — archived areas exist specifically so they can't receive new work. The full test suite still passed because no existing test ever posted to an archived area; the gap was in test coverage, not in whether the agent ran the tests.
+
+The patch also introduced a smaller, second regression: its `int(area_id)` coercion is new (the original code never coerced the type), and an uncaught `ValueError` on malformed input now returns a raw `500` instead of the endpoint's normal clean `400`. Not part of the reported bug, but a real side effect of the rewrite worth fixing alongside it.
+
 ### Task B — the prompt I would have given the agent
 
+```
+Fix this bug: when a task is added it lands under the existing area instead of the one selected.
+
+Before you change anything, read the full create_task function in app.py, not just the line that resolves area_id, note every check that function currently performs, and make sure your fix preserves all of them. In particular, the function currently rejects task creation both when the area doesn't exist and when the area is archived; both checks must still work after your change.
+
+Once you've identified and fixed the root cause, write a new test for the specific bug you fixed, and then re-read your diff line-by-line asking "does every line in this diff exist because the ticket required it, or did it change incidentally while I was rewriting this code?" For any incidental change, write a test proving the old behavior it depended on is still intact. Report which lines in your diff are new behavior versus which are unrelated to the ticket, so I can review them separately.
+```
+
 ### Task B — my own AI use on this task
+
+I used Claude Code throughout this task: to lay out where the fix and test should go, with reasoning, before I wrote them myself for my own review; and to help verify the agent's own diagnosis by checking `static/app.js` directly rather than taking `agent_report.md`'s claim about the `areaId` field at face value. I wrote the actual code changes, the archived-area guard, the `int()` try/except, and the tests by hand, then had the AI review my diff against the plan. It caught a real bug I'd introduced: the original unguarded `session.get(Area, int(area_id))` line was still sitting above the new `try/except` block, so the exception handler could never actually fire. I fixed that and reran the suite to confirm 12/12 passed. The corrected prompt and patch analysis above were drafted with AI assistance, then reviewed and edited by me before finalizing.
 
 ### Task C — prompt, acceptance check, and my three questions
 
@@ -204,4 +220,6 @@ I considered normalizing tags into a separate `tags`/`task_tags` join table, whi
 Genuinely useful to us, and it does not count against you. If part of this was
 unclear, badly specified or broken, say so.
 
-**(Task A, so far — will add to this as I go through B, C, D):** `docker compose exec db psql -f <path>` resolves the path inside the *container's* filesystem, not the host's. Since `migrations/` isn't mounted the way `initdb/` is, running `docker compose exec db psql -f migrations/0001_....sql` fails with "No such file or directory" — which reads like a broken migration but is really just a path-resolution gotcha. Piping the file in via stdin instead (`docker compose exec -T db psql -U screen -d screen < migrations/0001_....sql`) works. Worth a one-line note in the README's setup section for anyone applying a migration by hand.
+**(Task A):** `docker compose exec db psql -f <path>` resolves the path inside the *container's* filesystem, not the host's. Since `migrations/` isn't mounted the way `initdb/` is, running `docker compose exec db psql -f migrations/0001_add_tasks_meta_gin_index.sql` fails with "No such file or directory", which reads like a broken migration but is really just a path-resolution gotcha. Piping the file in via stdin instead (`docker compose exec -T db psql -U screen -d screen < migrations/0001_....sql`) works. Worth a one-line note in the README's setup section for anyone applying a migration by hand.
+
+**(Task B):** the README's `git apply agent_patch.diff` instructions don't say whether Task B is meant to be worked against a clean checkout or cumulatively on top of whatever earlier tasks already changed. In my case it applied cleanly on top of the Task A changes since they touch different functions, but that's incidental rather than guaranteed by the setup, a candidate whose Task A changes happened to touch `create_task` could hit a real conflict through no fault of their own. Also unclear: whether the "test fails with the patch applied" evidence is expected to survive as a commit in the history, or just as pasted output in this file. I treated it as transient, the same way Task A's `EXPLAIN ANALYZE` numbers are evidence rather than code, but the instructions don't say either way.
