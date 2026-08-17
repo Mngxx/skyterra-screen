@@ -23,49 +23,57 @@ def test_tasks_are_scoped_to_their_area(client, area_ids):
 
 
 def test_tag_filter_selects_the_right_tasks(client, area_ids):
-    body = client.get(
-        f"/api/tasks?area={area_ids['platform']}&tag=backend"
-    ).get_json()
+    body = client.get(f"/api/tasks?area={area_ids['platform']}&tag=backend").get_json()
     assert [t["title"] for t in body["tasks"]] == ["First"]
 
 
 def test_tag_filter_that_matches_nothing(client, area_ids):
-    body = client.get(
-        f"/api/tasks?area={area_ids['platform']}&tag=nonsense"
-    ).get_json()
+    body = client.get(f"/api/tasks?area={area_ids['platform']}&tag=nonsense").get_json()
     assert body["tasks"] == []
 
 
 def test_a_task_is_created_in_the_area_it_names(client, area_ids):
-    response = client.post("/api/tasks", json={
-        "title": "Created by the suite",
-        "area_id": area_ids["billing"],
-    })
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "Created by the suite",
+            "area_id": area_ids["billing"],
+        },
+    )
     assert response.status_code == 201
     assert response.get_json()["area_id"] == area_ids["billing"]
 
 
 def test_title_is_required(client, area_ids):
-    response = client.post("/api/tasks", json={
-        "title": "   ",
-        "area_id": area_ids["platform"],
-    })
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "   ",
+            "area_id": area_ids["platform"],
+        },
+    )
     assert response.status_code == 400
 
 
 def test_an_area_that_does_not_exist_is_rejected(client):
-    response = client.post("/api/tasks", json={
-        "title": "Nowhere",
-        "area_id": 999_999,
-    })
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "Nowhere",
+            "area_id": 999_999,
+        },
+    )
     assert response.status_code == 400
 
 
 def test_meta_round_trips(client, area_ids):
-    response = client.post("/api/tasks", json={
-        "title": "With meta",
-        "area_id": area_ids["platform"],
-        "meta": {"tags": ["perf"], "estimate": 3},
-    })
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "With meta",
+            "area_id": area_ids["platform"],
+            "meta": {"tags": ["perf"], "estimate": 3},
+        },
+    )
     assert response.status_code == 201
     assert response.get_json()["meta"]["estimate"] == 3
