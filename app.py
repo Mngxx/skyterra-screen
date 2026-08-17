@@ -5,10 +5,8 @@ exercise goes with which. Read it before changing anything.
 """
 
 from flask import Flask, jsonify, render_template, request
-from sqlalchemy import select
-
 from models import Area, SessionLocal, Task, init_db
-
+from sqlalchemy import select
 
 app = Flask(__name__)
 
@@ -32,9 +30,13 @@ def _last_used_area_id(session):
 @app.get("/")
 def index():
     with SessionLocal() as session:
-        areas = session.execute(
-            select(Area).where(Area.archived.is_(False)).order_by(Area.name)
-        ).scalars().all()
+        areas = (
+            session.execute(
+                select(Area).where(Area.archived.is_(False)).order_by(Area.name)
+            )
+            .scalars()
+            .all()
+        )
     return render_template("index.html", areas=areas)
 
 
@@ -42,11 +44,13 @@ def index():
 def list_areas():
     with SessionLocal() as session:
         areas = session.execute(select(Area).order_by(Area.name)).scalars().all()
-        return jsonify({
-            "areas": [
-                {"id": a.id, "name": a.name, "archived": a.archived} for a in areas
-            ]
-        })
+        return jsonify(
+            {
+                "areas": [
+                    {"id": a.id, "name": a.name, "archived": a.archived} for a in areas
+                ]
+            }
+        )
 
 
 @app.get("/api/tasks")
@@ -61,9 +65,13 @@ def list_tasks():
         return jsonify({"error": "area is required"}), 400
 
     with SessionLocal() as session:
-        rows = session.execute(
-            select(Task).where(Task.area_id == area_id).order_by(Task.id)
-        ).scalars().all()
+        rows = (
+            session.execute(
+                select(Task).where(Task.area_id == area_id).order_by(Task.id)
+            )
+            .scalars()
+            .all()
+        )
 
         if tag:
             matching = [t for t in rows if tag in (t.meta or {}).get("tags", [])]
@@ -75,19 +83,21 @@ def list_tasks():
             matching = rows
             count = len(rows)
 
-        return jsonify({
-            "count": count,
-            "tasks": [
-                {
-                    "id": t.id,
-                    "title": t.title,
-                    "area_id": t.area_id,
-                    "status": t.status,
-                    "meta": t.meta,
-                }
-                for t in matching
-            ],
-        })
+        return jsonify(
+            {
+                "count": count,
+                "tasks": [
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "area_id": t.area_id,
+                        "status": t.status,
+                        "meta": t.meta,
+                    }
+                    for t in matching
+                ],
+            }
+        )
 
 
 @app.post("/api/tasks")
@@ -112,13 +122,15 @@ def create_task():
         )
         session.add(task)
         session.commit()
-        return jsonify({
-            "id": task.id,
-            "title": task.title,
-            "area_id": task.area_id,
-            "status": task.status,
-            "meta": task.meta,
-        }), 201
+        return jsonify(
+            {
+                "id": task.id,
+                "title": task.title,
+                "area_id": task.area_id,
+                "status": task.status,
+                "meta": task.meta,
+            }
+        ), 201
 
 
 if __name__ == "__main__":
