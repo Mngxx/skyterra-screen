@@ -157,7 +157,7 @@ with the sections below filled in.
 | A | 1 hr 10 min | Includes a detour debugging a false performance regression that turned out to be a stopped Flask server / curl connection timeout, not real code. |
 | B | 56 min | Includes verifying the agent's root-cause claim directly in `static/app.js` rather than trusting the report, and catching a leftover unguarded line during self-review that would have made the new `try/except` silently ineffective. |
 | C | 40 min |  |
-| D (optional) |  |  |
+| D (optional) | 28 min | Includes iterating from a simple 200-row render cap to a "Load more" approach after reconsidering the cap would hide data from the user, and manual browser verification since `static/app.js` has no automated test coverage. |
 
 ### Task A — EXPLAIN ANALYZE, before and after
 
@@ -183,17 +183,17 @@ Planning Time: 0.531 ms
 Execution Time: 25.574 ms
 ```
 
-**Endpoint level, for context:** the ticket reports ~3s against the original code (Python-side filtering, no SQL change). After this fix — SQL-side filtering plus the index — `GET /api/tasks?area=3&tag=backend` returns in ~0.36–0.40s (`200`, verified over multiple runs). The gap between that and the 25.6ms SQL execution time is JSON-serializing the 12,335 matching tasks, not the query itself.
+**Endpoint level, for context:** the ticket reports ~3s against the original code (Python-side filtering, no SQL change). After this fix (SQL-side filtering plus the index), `GET /api/tasks?area=3&tag=backend` returns in ~0.36-0.40s (`200`, verified over multiple runs). The gap between that and the 25.6ms SQL execution time is JSON-serializing the 12,335 matching tasks, not the query itself.
 
 ### Task A — what I chose not to do
 
-I considered normalizing tags into a separate `tags`/`task_tags` join table, which would make duplicate tags structurally impossible and allow ordinary btree indexes instead of GIN — but that's a schema migration touching the write path and 250,000 existing rows, well beyond a ticket scoped to fixing one endpoint. I also considered a separate `COUNT(*)` query alongside a paginated task list, the more typical REST pattern, but this endpoint has no pagination today, so a second query would only duplicate work the current single query already does for free. Both are legitimate improvements I'd revisit if the endpoint's actual requirements grew to need them, not something to build speculatively now.
+I considered normalizing tags into a separate `tags`/`task_tags` join table, which would make duplicate tags structurally impossible and allow ordinary btree indexes instead of GIN, but that's a schema migration touching the write path and 250,000 existing rows, well beyond a ticket scoped to fixing one endpoint. I also considered a separate `COUNT(*)` query alongside a paginated task list, the more typical REST pattern, but this endpoint has no pagination today, so a second query would only duplicate work the current single query already does for free. Both are legitimate improvements I'd revisit if the endpoint's actual requirements grew to need them, not something to build speculatively now.
 
 ### Task B — what the patch actually does
 
-The agent's diagnosis was correct: the client posts the selected area as `areaId`, but the server only checked `area_id`, so the lookup always returned `None` and silently fell back to whichever area was most recently used. I verified this directly in `static/app.js` rather than taking the report's word for it — line 90 does send `areaId`. The patch's fix for that — accepting both spellings and coercing to `int` — is genuinely correct.
+The agent's diagnosis was correct: the client posts the selected area as `areaId`, but the server only checked `area_id`, so the lookup always returned `None` and silently fell back to whichever area was most recently used. I verified this directly in `static/app.js` rather than taking the report's word for it: line 90 does send `areaId`. The patch's fix for that (accepting both spellings and coercing to `int`) is genuinely correct.
 
-What the report doesn't mention: in rewriting the area lookup, the patch also dropped the `or area.archived` clause from the validation guard. The original code rejected task creation if the area didn't exist *or* was archived; the patched version only checks for existence. That means `POST /api/tasks` against an archived area (e.g. "Legacy import") now silently succeeds, which it shouldn't — archived areas exist specifically so they can't receive new work. The full test suite still passed because no existing test ever posted to an archived area; the gap was in test coverage, not in whether the agent ran the tests.
+What the report doesn't mention: in rewriting the area lookup, the patch also dropped the `or area.archived` clause from the validation guard. The original code rejected task creation if the area didn't exist *or* was archived; the patched version only checks for existence. That means `POST /api/tasks` against an archived area (e.g. "Legacy import") now silently succeeds, which it shouldn't: archived areas exist specifically so they can't receive new work. The full test suite still passed because no existing test ever posted to an archived area; the gap was in test coverage, not in whether the agent ran the tests.
 
 The patch also introduced a smaller, second regression: its `int(area_id)` coercion is new (the original code never coerced the type), and an uncaught `ValueError` on malformed input now returns a raw `500` instead of the endpoint's normal clean `400`. Not part of the reported bug, but a real side effect of the rewrite worth fixing alongside it.
 
@@ -208,6 +208,8 @@ Once you've identified and fixed the root cause, write a new test for the specif
 ```
 
 ### Task B — my own AI use on this task
+
+I'm coming from a Python/SQL/ETL background (Pandas, SQL Server, Athena) rather than Flask/SQLAlchemy specifically, so I leaned on Claude Code more for stack-specific syntax and API details, SQLAlchemy's ORM comparator syntax, Postgres JSONB operators, than I would in a stack I already know well. The diagnosis, the tradeoff decisions, and the review below were mine; AI filled the syntax gap, not the judgment calls.
 
 I used Claude Code throughout this task: to lay out where the fix and test should go, with reasoning, before I wrote them myself for my own review; and to help verify the agent's own diagnosis by checking `static/app.js` directly rather than taking `agent_report.md`'s claim about the `areaId` field at face value. I wrote the actual code changes, the archived-area guard, the `int()` try/except, and the tests by hand, then had the AI review my diff against the plan. It caught a real bug I'd introduced: the original unguarded `session.get(Area, int(area_id))` line was still sitting above the new `try/except` block, so the exception handler could never actually fire. I fixed that and reran the suite to confirm 12/12 passed. The corrected prompt and patch analysis above were drafted with AI assistance, then reviewed and edited by me before finalizing.
 
@@ -229,9 +231,9 @@ Acceptance Criteria:
 
 Acceptance check, what I would run or look at:
 
-1. Create three cards in the same column with distinct, controlled status-change timestamps. Select "Sort: Status" and visually confirm the column reorders longest-stuck-first, don't just read the code, look at the board.
+1. Create three cards in the same column with distinct, controlled status-change timestamps. Select "Sort: Status" and visually confirm the column reorders longest-stuck-first. Don't just read the code: look at the board.
 2. Switch to a different sort and back, to confirm the order is stable and repeatable, not a one-time render artifact.
-3. Confirm cards in other columns are unaffected, the fix should be scoped per-column.
+3. Confirm cards in other columns are unaffected; the fix should be scoped per-column.
 4. Confirm no other sort option regressed (this touches shared toolbar logic).
 5. Read the agent's new test and confirm it actually asserts order, not just a 200 response, and that it would fail against the original no-op behavior if you temporarily reverted the fix.
 6. Legacy-card fallback check: find or create a card with no recorded status-change timestamp. Confirm the sort places it at a defined, sensible position instead of crashing or ordering it arbitrarily.
@@ -245,6 +247,8 @@ Three questions I would want answered before starting:
 
 ### Task D — why I fixed it where I did
 
+I fixed this inside `renderTasks()` in `static/app.js`, the same function causing the bug, because the problem wasn't the polling interval or the fetch logic, it was how fetched data got applied to the DOM: `list.innerHTML = ''` destroyed every task row and its status dropdown on every poll, and browsers close a native select's open dropdown the moment its underlying node is removed. The fix keeps a `task.id` to DOM node map so existing rows are reused and only their changed content updates, never recreated, and skips updating a select the user currently has focused so an in-progress choice isn't overwritten mid-poll. While testing this, I noticed a related but separate problem: an unfiltered area can return tens of thousands of tasks, and rendering all of them was causing real lag independent of the dropdown bug. I added a client-side render cap with a "Load more" button so the DOM never holds more rows than needed at once, without ever hiding data from the user. This doesn't reduce the network or JSON-parsing cost of polling the full, unpaginated list every second though, that's the same pagination gap already noted in Task A.
+
 ### Anything that got in your way
 
 Genuinely useful to us, and it does not count against you. If part of this was
@@ -252,4 +256,6 @@ unclear, badly specified or broken, say so.
 
 **(Task A):** `docker compose exec db psql -f <path>` resolves the path inside the *container's* filesystem, not the host's. Since `migrations/` isn't mounted the way `initdb/` is, running `docker compose exec db psql -f migrations/0001_add_tasks_meta_gin_index.sql` fails with "No such file or directory", which reads like a broken migration but is really just a path-resolution gotcha. Piping the file in via stdin instead (`docker compose exec -T db psql -U screen -d screen < migrations/0001_....sql`) works. Worth a one-line note in the README's setup section for anyone applying a migration by hand.
 
-**(Task B):** the README's `git apply agent_patch.diff` instructions don't say whether Task B is meant to be worked against a clean checkout or cumulatively on top of whatever earlier tasks already changed. In my case it applied cleanly on top of the Task A changes since they touch different functions, but that's incidental rather than guaranteed by the setup, a candidate whose Task A changes happened to touch `create_task` could hit a real conflict through no fault of their own. Also unclear: whether the "test fails with the patch applied" evidence is expected to survive as a commit in the history, or just as pasted output in this file. I treated it as transient, the same way Task A's `EXPLAIN ANALYZE` numbers are evidence rather than code, but the instructions don't say either way.
+**(Task B):** the README's `git apply agent_patch.diff` instructions don't say whether Task B is meant to be worked against a clean checkout or cumulatively on top of whatever earlier tasks already changed. In my case it applied cleanly on top of the Task A changes since they touch different functions, but that's incidental rather than guaranteed by the setup. A candidate whose Task A changes happened to touch `create_task` could hit a real conflict through no fault of their own. Also unclear: whether the "test fails with the patch applied" evidence is expected to survive as a commit in the history, or just as pasted output in this file. I treated it as transient, the same way Task A's `EXPLAIN ANALYZE` numbers are evidence rather than code, but the instructions don't say either way.
+
+**(Task D):** `static/app.js` has no automated test coverage at all, `pytest tests -q` only covers the Flask backend, so a regression here (the original dropdown bug, or a regression in this fix) can only be caught by manually opening the app in a browser, not by the test suite. Worth flagging since Task D is the one task in this pack that can't be proven the way A, B and C can: there's no way to paste a command's output as evidence the way `EXPLAIN ANALYZE` or a passing test does.
