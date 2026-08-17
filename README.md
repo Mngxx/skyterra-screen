@@ -213,6 +213,36 @@ I used Claude Code throughout this task: to lay out where the fix and test shoul
 
 ### Task C — prompt, acceptance check, and my three questions
 
+```
+On the Kanban board, the toolbar has a "Sort: Status" option, but right now it does nothing visible. The board is already split into fixed workflow-status columns, so every card in a column already has the same status. Sorting by the status value cannot change the order inside a column. Instead of removing this option, we want to redefine what it does: it will sort cards inside each column by how long they have been in their current status, with the longest-stuck cards on top, so bottleneck cards become visible. The fix must stay inside the existing toolbar control (same label, same position, no new UI), work independently per column, and must not change any other sort option. "Time in status" means the time since the card's status last changed to its current value, not the time since the card was created.
+
+Acceptance Criteria:
+- Before writing any code, find and run the existing sort-related tests. This will show the current behavior and what coverage already exists for the toolbar's sort options.
+- Check if a status-change timestamp already exists on the card model, or if it needs a migration. Tell me which one before you implement anything.
+- Compute "time in current status" only inside each column. Do not change the order between columns.
+- Think about at least one other option you did not choose, for example removing the option, or sorting by a different status-related field. Even if you don't build it, tell me why you did not choose it.
+- Tell me about any tradeoffs or effects this change could have in production, for example the cost of computing or storing status-change timestamps at scale, or migration risk on existing rows.
+- Add comments or update the documentation for any logic that is not obvious, for example why "time in status" resets on status change and not on card creation.
+- Show me the diff and your reasoning before you apply any change. I need to review it before it gets committed.
+- After I approve and you implement, add or update tests for the new sort behavior, and run the full test suite to confirm nothing else breaks.
+```
+
+Acceptance check, what I would run or look at:
+
+1. Create three cards in the same column with distinct, controlled status-change timestamps. Select "Sort: Status" and visually confirm the column reorders longest-stuck-first, don't just read the code, look at the board.
+2. Switch to a different sort and back, to confirm the order is stable and repeatable, not a one-time render artifact.
+3. Confirm cards in other columns are unaffected, the fix should be scoped per-column.
+4. Confirm no other sort option regressed (this touches shared toolbar logic).
+5. Read the agent's new test and confirm it actually asserts order, not just a 200 response, and that it would fail against the original no-op behavior if you temporarily reverted the fix.
+6. Legacy-card fallback check: find or create a card with no recorded status-change timestamp. Confirm the sort places it at a defined, sensible position instead of crashing or ordering it arbitrarily.
+7. Scale check: measure sort performance on a column with a realistic large number of cards (hundreds or thousands). Don't assume it's fast just because it works on 3 test cards.
+
+Three questions I would want answered before starting:
+
+1. Is the real problem the toolbar option itself, or the fixed-column layout? Maybe the actual want is a flat, non-grouped view where sorting by status is meaningful precisely because cards aren't already split into columns by status. If unanswered, I would assume the fixed-column layout is intentional and out of scope, and redefine the sort within the existing layout rather than proposing a new board view.
+2. Could "longest-stuck-first" framing create gaming behavior, people nudging a card's status just to reset its clock, rather than surfacing real bottlenecks? If unanswered, I would accept this as a known risk for a first version, note it plainly in the PR description, and treat it as a "revisit if reported" item rather than blocking on it.
+3. What's the actual complaint behind this ticket, do we have the original support ticket or session replay? The ticket as written is a developer's diagnosis of a symptom, not necessarily the user's own words about what they wanted. If unanswered, I would assume the ticket description accurately captures user intent, and treat "make the sort meaningful" as the real goal rather than guessing at an unstated one.
+
 ### Task D — why I fixed it where I did
 
 ### Anything that got in your way
