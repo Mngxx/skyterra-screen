@@ -156,7 +156,7 @@ with the sections below filled in.
 |---|---|---|
 | A | 1 hr 10 min | Includes a detour debugging a false performance regression that turned out to be a stopped Flask server / curl connection timeout, not real code. |
 | B | 56 min | Includes verifying the agent's root-cause claim directly in `static/app.js` rather than trusting the report, and catching a leftover unguarded line during self-review that would have made the new `try/except` silently ineffective. |
-| C |  |  |
+| C | 40 min |  |
 | D (optional) |  |  |
 
 ### Task A — EXPLAIN ANALYZE, before and after
