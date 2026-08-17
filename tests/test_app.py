@@ -104,3 +104,14 @@ def test_a_task_cannot_be_created_in_an_archived_area(client, area_ids):
         },
     )
     assert response.status_code == 400
+
+
+def test_a_malformed_area_id_is_rejected_cleanly(client):
+    response = client.post(
+        "/api/tasks",
+        json={
+            "title": "Bad id",
+            "area_id": "not-a-number",
+        },
+    )
+    assert response.status_code == 400

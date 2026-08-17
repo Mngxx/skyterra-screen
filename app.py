@@ -101,7 +101,10 @@ def create_task():
         area_id = payload.get("area_id", payload.get("areaId"))
         if area_id is None:
             area_id = _last_used_area_id(session)
-        area = session.get(Area, int(area_id))
+        try:
+            area = session.get(Area, int(area_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "unknown area"}), 400
         if area is None or area.archived:
             return jsonify({"error": "unknown area"}), 400
 
